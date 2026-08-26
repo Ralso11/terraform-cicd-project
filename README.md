@@ -1,205 +1,253 @@
 # Terraform CI/CD Project
 
-A hands-on DevOps portfolio project: a static website hosted on AWS, with its
-infrastructure defined as code (Terraform) and deployed automatically through
-a CI/CD pipeline (GitHub Actions).
+**Live site:** check CloudFront → Distributions in the AWS Console for the
+current URL (see note at the bottom on why this URL can change).
 
-This project exists to demonstrate a real-world cloud workflow end to end —
-not just "clicking around in the AWS Console," but defining infrastructure in
-version-controlled code, and safely automating how it gets deployed.
+## What is this project, in one sentence?
 
-## Why this project exists
+A small website that gets built and published automatically: you write
+code describing what you want, you push it to GitHub, and a robot
+(GitHub Actions) builds it for real on Amazon's servers — safely, and
+only after you click "approve."
 
-Two skills matter most for a remote cloud/DevOps role:
+## Why does this project exist?
 
-1. **Infrastructure as Code (IaC)** — proving infrastructure can be defined,
-   reviewed, and reproduced from code instead of manual console clicks.
-2. **CI/CD** — proving that deployments can be automated safely, with review
-   steps, instead of someone manually running commands from their laptop.
+To learn and prove two real job skills, using the smallest possible
+example:
 
-This repo combines both intentionally, in one project, because in real jobs
-they're not separate skills — Terraform defines *what* to build, and the
-pipeline automates *how* it gets built and kept up to date.
+1. **Infrastructure as Code (Terraform):** instead of clicking around in
+   a website (the AWS Console) to create things by hand, you write a text
+   file describing what you want, and a tool builds exactly that. This is
+   reproducible (anyone can build the same thing from your file) and
+   reviewable (you can see exactly what changed, like editing a Word doc
+   with Track Changes on).
+2. **CI/CD (Continuous Integration / Continuous Deployment):** instead of
+   you personally running commands from your laptop every time something
+   changes, a robot does it automatically, every time you push code —
+   but with a safety pause before anything real happens.
 
-## Architecture
+Real cloud/DevOps jobs are built around exactly these two skills. This
+project is a small, honest example of both, done the "real" way, not a
+shortcut version.
 
-- **Amazon S3** — stores the static website files. The bucket itself is
-  fully private (no public access at all).
-- **Amazon CloudFront** — a CDN that sits in front of the S3 bucket, serves
-  the site over HTTPS globally, and is the *only* thing allowed to read from
-  the bucket.
-- **Origin Access Control (OAC)** — the modern, secure way to let CloudFront
-  read from a private S3 bucket, instead of making the bucket public.
-
-```
-Visitor → CloudFront (HTTPS) → S3 bucket (private)
-```
-
-### Why S3 + CloudFront instead of an EC2 server?
-
-- No server to patch, manage, or leave running (and accidentally get billed
-  for).
-- S3 storage costs fractions of a cent for a small site; CloudFront's free
-  tier covers plenty of traffic for a portfolio project.
-- It's the standard, recommended AWS pattern for static sites — showing
-  awareness of this matters more to reviewers than knowing how to spin up a
-  bare EC2 instance.
-
-### Why keep the S3 bucket private + use OAC?
-
-A public S3 bucket is a common real-world misconfiguration and security
-risk. Using CloudFront + OAC to be the only path to the bucket reflects
-current AWS best practice, not an outdated pattern (like the older, now
-discouraged Origin Access Identity or public bucket policies).
-
-## Repository structure
+## The big picture — how it all connects
 
 ```
-terraform-cicd-project/
-├── terraform/
-│   ├── providers.tf     # Which provider (AWS) and version constraints
-│   ├── variables.tf     # Reusable input values (region, project name, environment)
-│   ├── main.tf          # The actual infrastructure: S3 bucket + CloudFront
-│   └── outputs.tf       # Useful info printed after deployment (site URL, bucket name)
-├── .gitignore           # Prevents committing Terraform state/secrets
-└── README.md
+You write code  ->  You push to GitHub  ->  GitHub Actions wakes up
+       ->  It checks your code is valid (safe, automatic)
+       ->  It shows you EXACTLY what would be built (safe, automatic)
+       ->  It PAUSES and waits for you to click "Approve"
+       ->  Only then does it actually build things in AWS
+       ->  It uploads your website files
+       ->  Your site is live
 ```
 
-## File-by-file explanation
+Nothing expensive or risky happens without you personally clicking
+"approve" at least once. That pause is intentional and is a real-world
+best practice.
 
-### `terraform/providers.tf`
-Declares that this project uses the AWS provider (pinned to `~> 5.0`, so a
-future major version can't silently break the code) and a minimum Terraform
-version (`>= 1.5.0`) to avoid "works on my machine" issues.
+## What actually got built (the architecture)
 
-### `terraform/variables.tf`
-Defines reusable, named values instead of hardcoding them throughout the
-code:
-- `aws_region` — defaults to `eu-central-1` (Frankfurt), the closest AWS
-  region to Germany.
-- `project_name` — used to consistently name and tag every resource.
-- `environment` — lets the same code deploy a `dev` or `prod` copy later
-  just by changing one value, without duplicating files.
+- **Amazon S3** — think of this as a private storage locker. It holds
+  your website's files (just an `index.html` for now). By itself, nobody
+  on the internet can see inside this locker — it's locked.
+- **Amazon CloudFront** — this is the "front desk." It's the only thing
+  with a key to that locker, and it's what visitors actually talk to. It
+  also makes the site load fast worldwide and forces secure HTTPS.
+- **A security policy connecting them** — a written rule that says
+  "CloudFront (and only this specific CloudFront) is allowed to open this
+  locker and read files from it." Without this rule, even CloudFront
+  gets refused — which is a mistake we actually hit and fixed (see the
+  Problems & Fixes section — it's a really common real-world gotcha).
 
-### `terraform/main.tf`
-The actual infrastructure:
-- An S3 bucket, named uniquely per project/environment, with **all public
-  access explicitly blocked**.
-- A CloudFront Origin Access Control (OAC), which is what lets CloudFront
-  read from the private bucket securely.
-- A CloudFront distribution in front of the bucket, forcing HTTPS
-  (`redirect-to-https`) and using CloudFront's free default SSL certificate.
+```
+Visitor's browser -> (HTTPS) -> CloudFront -> (secure permission) -> S3 (private)
+```
 
-### `terraform/outputs.tf`
-Prints the site's CloudFront URL and the S3 bucket name after a successful
-deploy, so there's no need to dig through the AWS Console to find them.
+### Why build it this way instead of simpler options?
 
-### `.gitignore`
-Excludes Terraform's local cache (`.terraform/`) and state files
-(`*.tfstate`). State files can contain sensitive details about real
-infrastructure and should never be committed to a public repo — in a
-production setup, state is stored in a secure remote backend instead (a
-planned future step in this project, see Roadmap).
+- **Why not just make the S3 bucket public?** A public storage bucket is
+  one of the most common real-world security mistakes companies make
+  (accidentally exposing private files to the whole internet). Keeping it
+  private and only letting CloudFront read it is the responsible,
+  professional pattern.
+- **Why not a regular web server (EC2)?** A server needs constant
+  maintenance, security updates, and keeps costing money while it's
+  running, even with no visitors. S3 + CloudFront costs a tiny fraction of
+  a cent for a small site and there's no server to babysit.
 
-## Project log
+## Step-by-step: everything we did, in order, and why
 
-Chronological record of what was done and why, kept up to date as the
-project progresses.
+### 1. Set up Git identity on the work PC
+We told Git "who you are" (name + email), so every change you make is
+correctly credited to you.
 
-1. **Repo created** — `terraform-cicd-project` on GitHub, separate from
-   other repos, scoped specifically to this Terraform + CI/CD project.
-2. **Local Git setup** — connected a work PC to GitHub over HTTPS;
-   configured Git identity (name/email) locally per-repo due to a
-   corporate-network home-directory permission quirk (`HOME` pointed to a
-   non-writable network share).
-3. **Core Terraform files written** — `providers.tf`, `variables.tf`,
-   `main.tf`, `outputs.tf` — defining the private S3 bucket + CloudFront
-   static site architecture described above.
-4. **`.gitignore` added** — to keep Terraform state and cache files out of
-   version control.
-5. **First commit pushed** — "Add core Terraform config: S3 + CloudFront
-   static site infrastructure."
-6. **AWS account set up** — a real AWS account was created (separate from
-   an existing free AWS Builder ID, which only covers learning content and
-   cannot run real infrastructure), with a **zero-spend budget alert** so
-   any unexpected cost triggers an email immediately.
-7. **A dedicated, restricted IAM user was created** (`terraform-deployer`)
-   for Terraform to use, instead of the AWS root account. It has:
-   - No AWS Console (website) login — programmatic access only, via keys.
-   - Only two permissions attached: `AmazonS3FullAccess` and
-     `CloudFrontFullAccess` — nothing else.
+- **Problem we hit:** the work PC's `HOME` folder pointed at a company
+  network drive (`//dcpan03/home/`) that wasn't accessible, so Git
+  couldn't save settings there.
+- **Fix:** we manually pointed Git's config to a real, writable folder on
+  the local `C:` drive instead
+  (`git config --file "/c/Users/rasecheres/.gitconfig" ...`).
+- **Lesson:** company laptops sometimes have unusual folder setups —
+  this isn't a sign anything is broken, just something to work around
+  once.
 
-   **Why not just use the root account?** This follows the *principle of
-   least privilege* — a core cloud security concept. If these specific
-   keys were ever leaked, an attacker could only touch S3 and CloudFront in
-   this account, not billing, not other services, not account settings.
-   Every real cloud team works this way.
-8. **Credentials stored as GitHub Secrets** — the IAM user's access key ID
-   and secret access key were added as encrypted repository secrets
-   (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`) under the repo's
-   Settings → Secrets and variables → Actions. GitHub encrypts these,
-   never displays them again once saved, and automatically masks them in
-   any workflow log output. The actual key values are **never** written to
-   any file in this repository — only their names are referenced from the
-   pipeline.
-9. **GitHub Actions pipeline written** — `.github/workflows/terraform.yml`.
-   Explained in detail below.
-10. **First pipeline run succeeded** — triggered automatically by a push to
-    `main`. The pipeline checked out the code, installed Terraform, logged
-    into AWS using the stored secrets, and ran `terraform plan`, which
-    reported `Plan: 4 to add, 0 to change, 0 to destroy` — confirming the
-    whole chain (code → pipeline → AWS credentials) works correctly.
-    **Nothing has been deployed to AWS yet** — `plan` only simulates what
-    *would* happen; no `apply` step exists in the pipeline yet by design
-    (see Roadmap).
+### 2. Created a new, dedicated GitHub repository
+A repository ("repo") is just a project folder that lives on GitHub and
+tracks every change ever made to it. We made a fresh one
+(`terraform-cicd-project`), separate from other projects, so this one
+stays focused and easy to review on its own.
 
-## The CI/CD pipeline, explained
+### 3. Connected the local project folder to GitHub
+```
+git clone https://github.com/Ralso11/terraform-cicd-project.git
+```
+This downloaded an empty copy of the repo onto the PC, so local changes
+can be tracked and then sent ("pushed") back up to GitHub.
 
-File: `.github/workflows/terraform.yml`
+### 4. Wrote the core Terraform files
+Four files, each with one job:
 
-In plain terms: every time code is pushed to the `main` branch, GitHub
-automatically spins up a temporary Linux machine and runs these steps in
-order:
+| File | What it's for |
+|---|---|
+| `providers.tf` | Tells Terraform "we're using AWS," and locks a version range so future AWS tool updates don't silently break things. |
+| `variables.tf` | Defines reusable settings (region, project name, environment) in one place instead of repeating them everywhere. |
+| `main.tf` | The actual blueprint: the S3 bucket, the security settings, the CloudFront setup. |
+| `outputs.tf` | After building, prints useful info (like the site's web address) instead of making you hunt for it in the AWS website. |
 
-1. **Checkout code** — downloads the repo's current code onto that machine.
-2. **Set up Terraform** — installs the Terraform CLI.
-3. **Configure AWS credentials** — logs into AWS using the
-   `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` secrets (never visible in
-   any log).
-4. **Terraform fmt -check** — verifies the code is formatted consistently.
-5. **Terraform init** — downloads the AWS provider plugin.
-6. **Terraform validate** — checks the code is syntactically correct.
-7. **Terraform plan** — simulates what would change in AWS, without
-   changing anything for real.
+### 5. Added a `.gitignore`
+A `.gitignore` file tells Git "never track these files." We excluded
+Terraform's temporary cache folder and its `state` file (explained in
+step 8) — these can contain sensitive info and shouldn't be shared
+publicly on GitHub.
 
-**Why stop at `plan` and not also run `apply`?** `apply` is the only step
-that creates or changes real infrastructure. Deliberately leaving it out
-for now means every push is 100% safe to test — nothing can accidentally
-get created or cost money yet. Adding `apply` with a required manual
-approval step is a planned next step (see Roadmap) — this human checkpoint
-before touching real infrastructure is a standard, safety-conscious CI/CD
-pattern.
+### 6. First commit and push
+```
+git add .
+git commit -m "Add core Terraform config: S3 + CloudFront static site infrastructure"
+git push
+```
+- `git add .` — stages all the changed files, meaning "include these in
+  the next save point."
+- `git commit -m "..."` — creates that save point, with a message
+  explaining what changed and why. Good messages are themselves part of
+  what makes a project look professional.
+- `git push` — uploads that save point from the local PC up to GitHub.
 
-## Roadmap (not yet done)
+### 7. Set up the real AWS account safely
+- Created a real AWS account (separate from an existing free "Builder
+  ID," which is only for taking courses and can't build real
+  infrastructure).
+- Immediately set up a **zero-spend budget alert** — an early-warning
+  email that fires the instant anything would cost money. This is a
+  safety net, not a guarantee, but it means surprises get caught within
+  hours, not discovered on a bill weeks later.
+- Created a separate, limited login just for this project
+  (`terraform-deployer`), instead of using the all-powerful root account.
+  This login can only touch S3 and CloudFront — nothing else — and can't
+  even log into the AWS website, only use command-line tools. This way,
+  if these specific keys were ever leaked, the damage is very limited.
+  This is called the "principle of least privilege" and is a standard
+  professional security habit.
+- Stored that login's two secret keys inside **GitHub Secrets**
+  (Settings -> Secrets and variables -> Actions) instead of writing them
+  in any file. GitHub encrypts these and never shows them again once
+  saved — this is the standard, safe way to hand credentials to
+  automation.
 
-- [ ] Add a manual-approval `apply` step to the pipeline, so pushing code
-      can — after a human clicks approve — actually create the real AWS
-      infrastructure.
-- [ ] Move Terraform state to a remote backend (S3 + DynamoDB locking)
-      instead of local state, so state is shared and safe for team/CI use.
-- [ ] Add the actual static site content to deploy.
-- [ ] Add cost/security scanning tools to the pipeline (e.g. `tflint`,
-      `checkov`) as an extra quality gate.
+### 8. Wrote the CI/CD pipeline (`.github/workflows/terraform.yml`)
+This file tells GitHub: "every time someone pushes code to `main`, do
+these steps automatically." It has two stages:
 
-## How to reproduce this project
+**Stage 1 — `plan` (always runs, 100% safe):**
+1. Download the code onto a temporary computer
+2. Install Terraform
+3. Log into AWS using the stored secret keys
+4. Check the code is formatted and written correctly
+5. Show exactly what *would* be built or changed — without actually
+   doing it
 
-1. Clone this repo.
-2. Install [Terraform](https://developer.hashicorp.com/terraform/downloads)
-   and configure AWS credentials locally (`aws configure`, or environment
-   variables).
-3. `cd terraform`
-4. `terraform init` — downloads the AWS provider.
-5. `terraform plan` — shows what would be created, without creating it.
-6. `terraform apply` — creates the real infrastructure (this will incur
-   minimal AWS costs — see the Roadmap for the free-tier/budget-alert
-   safeguard being added).
+**Stage 2 — `apply` (only runs after you approve):**
+1. Actually build/update the real infrastructure in AWS
+2. Upload the website file into the S3 storage locker
+
+The pause between these two stages is created by a **GitHub
+Environment** named `production`, with "required reviewers" turned on —
+this is what makes GitHub stop and wait for a human click before
+anything real happens.
+
+### 9. Added a state "backend" (shared memory for Terraform)
+Terraform needs to remember what it already built, so it doesn't try to
+build the same thing twice. This memory is called the **state file**.
+
+- **Problem we hit:** at first, this memory only existed temporarily on
+  whatever computer ran Terraform. Once GitHub's temporary computer was
+  thrown away after each run, the memory was gone too — so the next run
+  tried to create the S3 bucket and security settings *again*, and AWS
+  correctly refused ("this already exists").
+- **Fix:** we created one extra, dedicated S3 bucket
+  (`ralso11-terraform-state-2026`) whose only job is to store this memory
+  file permanently, so every run — no matter which computer executes it —
+  reads and writes the same shared memory.
+- We also had to manually delete the partially-created resources from
+  the failed run and let the pipeline rebuild them cleanly with the new
+  shared memory in place from the start. In a company setting with real
+  users, you'd instead carefully "import" existing resources into the
+  new memory instead of deleting them — we chose the simpler path here
+  since nothing real depended on those resources yet.
+
+### 10. Fixed the final "Access Denied" error
+After everything deployed, visiting the site showed an **Access Denied**
+error. The cause: we told CloudFront it's *allowed* to be the only reader
+of the bucket (via something called an Origin Access Control), but we
+never actually wrote the matching permission rule *on the S3 bucket
+itself* granting that access. It's like giving someone a key without
+ever registering it with the lock — the key exists, but the lock doesn't
+recognize it yet.
+
+**Fix:** added one more resource, an `aws_s3_bucket_policy`, that
+explicitly grants read access — but *only* to this exact CloudFront
+distribution, not to CloudFront in general and not to the public. After
+this deployed, the site worked correctly.
+
+## Problems & fixes — quick reference
+
+| Problem | Why it happened | How we fixed it |
+|---|---|---|
+| Git couldn't save name/email | Work PC's home folder pointed to an inaccessible network drive | Pointed Git's config file directly to a local folder |
+| Pipeline failed: "bucket already exists" | Terraform's memory of what it built only lived temporarily, and got lost between runs | Added a permanent, shared S3 backend to store that memory |
+| Site showed "Access Denied" | CloudFront was never actually granted a matching permission on the S3 bucket | Added an S3 bucket policy scoped to that one CloudFront distribution |
+
+## How to reproduce this project yourself
+
+1. Install [Git](https://git-scm.com) and [Terraform](https://developer.hashicorp.com/terraform/downloads).
+2. Create a GitHub repo and clone it locally.
+3. Create an AWS account, set a budget alert, and create a limited IAM
+   user with S3 + CloudFront permissions only.
+4. Create a separate S3 bucket to hold Terraform's state, and reference
+   it in a `backend.tf` file.
+5. Write `providers.tf`, `variables.tf`, `main.tf`, `outputs.tf` as shown
+   in this repo.
+6. Store your AWS keys as GitHub Secrets.
+7. Write a GitHub Actions workflow with a `plan` stage (always runs) and
+   an `apply` stage (gated behind a protected "environment" requiring
+   manual approval).
+8. Push, approve, and check your CloudFront URL.
+
+## A note on the live URL
+
+Every time a CloudFront distribution is destroyed and recreated (which
+happened once here, during cleanup), AWS assigns it a **brand new**
+`.cloudfront.net` address — the old one stops working permanently. This
+is normal and expected; always get the current URL from the AWS Console
+rather than relying on ones mentioned earlier in a project's history.
+
+## What's next (possible future additions)
+
+- [ ] Automatically invalidate CloudFront's cache after each deploy, so
+      updates show up immediately instead of waiting for the cache to
+      expire.
+- [ ] Point a real custom domain name at the CloudFront distribution.
+- [ ] Add automated security/cost-scanning tools to the pipeline
+      (`tflint`, `checkov`).
+- [ ] Add a `staging` environment alongside `production`.
