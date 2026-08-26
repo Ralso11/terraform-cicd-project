@@ -119,19 +119,77 @@ project progresses.
    version control.
 5. **First commit pushed** — "Add core Terraform config: S3 + CloudFront
    static site infrastructure."
+6. **AWS account set up** — a real AWS account was created (separate from
+   an existing free AWS Builder ID, which only covers learning content and
+   cannot run real infrastructure), with a **zero-spend budget alert** so
+   any unexpected cost triggers an email immediately.
+7. **A dedicated, restricted IAM user was created** (`terraform-deployer`)
+   for Terraform to use, instead of the AWS root account. It has:
+   - No AWS Console (website) login — programmatic access only, via keys.
+   - Only two permissions attached: `AmazonS3FullAccess` and
+     `CloudFrontFullAccess` — nothing else.
+
+   **Why not just use the root account?** This follows the *principle of
+   least privilege* — a core cloud security concept. If these specific
+   keys were ever leaked, an attacker could only touch S3 and CloudFront in
+   this account, not billing, not other services, not account settings.
+   Every real cloud team works this way.
+8. **Credentials stored as GitHub Secrets** — the IAM user's access key ID
+   and secret access key were added as encrypted repository secrets
+   (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`) under the repo's
+   Settings → Secrets and variables → Actions. GitHub encrypts these,
+   never displays them again once saved, and automatically masks them in
+   any workflow log output. The actual key values are **never** written to
+   any file in this repository — only their names are referenced from the
+   pipeline.
+9. **GitHub Actions pipeline written** — `.github/workflows/terraform.yml`.
+   Explained in detail below.
+10. **First pipeline run succeeded** — triggered automatically by a push to
+    `main`. The pipeline checked out the code, installed Terraform, logged
+    into AWS using the stored secrets, and ran `terraform plan`, which
+    reported `Plan: 4 to add, 0 to change, 0 to destroy` — confirming the
+    whole chain (code → pipeline → AWS credentials) works correctly.
+    **Nothing has been deployed to AWS yet** — `plan` only simulates what
+    *would* happen; no `apply` step exists in the pipeline yet by design
+    (see Roadmap).
+
+## The CI/CD pipeline, explained
+
+File: `.github/workflows/terraform.yml`
+
+In plain terms: every time code is pushed to the `main` branch, GitHub
+automatically spins up a temporary Linux machine and runs these steps in
+order:
+
+1. **Checkout code** — downloads the repo's current code onto that machine.
+2. **Set up Terraform** — installs the Terraform CLI.
+3. **Configure AWS credentials** — logs into AWS using the
+   `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` secrets (never visible in
+   any log).
+4. **Terraform fmt -check** — verifies the code is formatted consistently.
+5. **Terraform init** — downloads the AWS provider plugin.
+6. **Terraform validate** — checks the code is syntactically correct.
+7. **Terraform plan** — simulates what would change in AWS, without
+   changing anything for real.
+
+**Why stop at `plan` and not also run `apply`?** `apply` is the only step
+that creates or changes real infrastructure. Deliberately leaving it out
+for now means every push is 100% safe to test — nothing can accidentally
+get created or cost money yet. Adding `apply` with a required manual
+approval step is a planned next step (see Roadmap) — this human checkpoint
+before touching real infrastructure is a standard, safety-conscious CI/CD
+pattern.
 
 ## Roadmap (not yet done)
 
-- [ ] Set up an AWS account + budget alert, and run `terraform plan` for
-      real for the first time.
-- [ ] Add a GitHub Actions pipeline (`.github/workflows/terraform.yml`) that
-      runs `terraform fmt`, `validate`, and `plan` automatically on every
-      push, with `apply` requiring manual approval.
-- [ ] Store AWS credentials securely as GitHub Secrets (never hardcoded in
-      code).
+- [ ] Add a manual-approval `apply` step to the pipeline, so pushing code
+      can — after a human clicks approve — actually create the real AWS
+      infrastructure.
 - [ ] Move Terraform state to a remote backend (S3 + DynamoDB locking)
-      instead of local state.
+      instead of local state, so state is shared and safe for team/CI use.
 - [ ] Add the actual static site content to deploy.
+- [ ] Add cost/security scanning tools to the pipeline (e.g. `tflint`,
+      `checkov`) as an extra quality gate.
 
 ## How to reproduce this project
 
