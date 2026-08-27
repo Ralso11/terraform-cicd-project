@@ -3,6 +3,10 @@
 **Live site:** check CloudFront → Distributions in the AWS Console for the
 current URL (see note at the bottom on why this URL can change).
 
+📖 Want the full, beginner-friendly walkthrough of every step, command,
+and decision made in this project? See
+[PROJECT_GUIDE.md](./PROJECT_GUIDE.md).
+
 ## What is this project, in one sentence?
 
 A small website that gets built and published automatically: you write
