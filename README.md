@@ -40,15 +40,18 @@ shortcut version.
 You write code  ->  You push to GitHub  ->  GitHub Actions wakes up
        ->  It checks your code is valid (safe, automatic)
        ->  It shows you EXACTLY what would be built (safe, automatic)
+       ->  It stops here. Nothing is built yet.
+
+Later, when you decide to deploy, you press "Run workflow" in GitHub:
        ->  It PAUSES and waits for you to click "Approve"
        ->  Only then does it actually build things in AWS
        ->  It uploads your website files
        ->  Your site is live
 ```
 
-Nothing expensive or risky happens without you personally clicking
-"approve" at least once. That pause is intentional and is a real-world
-best practice.
+Nothing expensive or risky happens until you personally start a deployment
+and then click "approve". Those are two deliberate checkpoints, and a
+real-world best practice.
 
 ## What actually got built (the architecture)
 
@@ -160,8 +163,10 @@ git push
   automation.
 
 ### 8. Wrote the CI/CD pipeline (`.github/workflows/terraform.yml`)
-This file tells GitHub: "every time someone pushes code to `main`, do
-these steps automatically." It has two stages:
+This file tells GitHub what to do. The `plan` stage runs automatically every
+time someone pushes code to `main` or opens a pull request. The `apply`
+stage only runs when you start the workflow by hand ("Run workflow"). It has
+two stages:
 
 **Stage 1 — `plan` (always runs, 100% safe):**
 1. Download the code onto a temporary computer
@@ -171,7 +176,7 @@ these steps automatically." It has two stages:
 5. Show exactly what *would* be built or changed — without actually
    doing it
 
-**Stage 2 — `apply` (only runs after you approve):**
+**Stage 2 - `apply` (only runs when started by hand, and after you approve):**
 1. Actually build/update the real infrastructure in AWS
 2. Upload the website file into the S3 storage locker
 
@@ -179,6 +184,10 @@ The pause between these two stages is created by a **GitHub
 Environment** named `production`, with "required reviewers" turned on —
 this is what makes GitHub stop and wait for a human click before
 anything real happens.
+
+**Why `apply` is manual:** the first version ran `apply` on every push, so even a
+documentation-only change could trigger a deployment. The workflow now plans on
+every push, and `apply` only starts when you press "Run workflow".
 
 ### 9. Added a state "backend" (shared memory for Terraform)
 Terraform needs to remember what it already built, so it doesn't try to
@@ -233,10 +242,11 @@ this deployed, the site worked correctly.
 5. Write `providers.tf`, `variables.tf`, `main.tf`, `outputs.tf` as shown
    in this repo.
 6. Store your AWS keys as GitHub Secrets.
-7. Write a GitHub Actions workflow with a `plan` stage (always runs) and
-   an `apply` stage (gated behind a protected "environment" requiring
-   manual approval).
-8. Push, approve, and check your CloudFront URL.
+7. Write a GitHub Actions workflow with a `plan` stage (runs on every push) and
+   an `apply` stage (started by hand, and gated behind a protected
+   "environment" requiring manual approval).
+8. Push (the `plan` stage runs by itself), then start the workflow by hand with
+   "Run workflow", approve it, and check your CloudFront URL.
 
 ## A note on the live URL
 
