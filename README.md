@@ -53,6 +53,31 @@ Nothing expensive or risky happens until you personally start a deployment
 and then click "approve". Those are two deliberate checkpoints, and a
 real-world best practice.
 
+## Architecture diagrams
+
+**What gets built in AWS:**
+
+```mermaid
+flowchart LR
+    V["Visitor browser"] -->|"HTTPS"| CF["CloudFront distribution"]
+    CF -->|"Origin Access Control (signed requests)"| S3[("Private S3 bucket<br/>index.html")]
+    P["Bucket policy: only this<br/>distribution may read"] -.-> S3
+```
+
+**How a change reaches AWS (CI/CD):**
+
+```mermaid
+flowchart LR
+    A["git push to main"] --> B["GitHub Actions: plan<br/>fmt, init, validate, plan"]
+    B --> C{"Start the workflow<br/>by hand?"}
+    C -->|"no"| D["Stop: nothing changes in AWS"]
+    C -->|"yes"| E["Approval gate<br/>(production environment)"]
+    E --> F["apply: terraform apply"]
+    F --> G["Sync site/ to S3"]
+    ST[("S3 bucket with<br/>Terraform state")] -.-> B
+    ST -.-> F
+```
+
 ## What actually got built (the architecture)
 
 - **Amazon S3** — think of this as a private storage locker. It holds
