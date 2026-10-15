@@ -87,11 +87,11 @@ We told Git "who you are" (name + email), so every change you make is
 correctly credited to you.
 
 - **Problem we hit:** the work PC's `HOME` folder pointed at a company
-  network drive (`//dcpan03/home/`) that wasn't accessible, so Git
+  network drive that wasn't accessible, so Git
   couldn't save settings there.
 - **Fix:** we manually pointed Git's config to a real, writable folder on
   the local `C:` drive instead
-  (`git config --file "/c/Users/rasecheres/.gitconfig" ...`).
+  (`git config --file "/c/Users/<your-user>/.gitconfig" ...`).
 - **Lesson:** company laptops sometimes have unusual folder setups —
   this isn't a sign anything is broken, just something to work around
   once.

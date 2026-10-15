@@ -117,7 +117,7 @@ settings (needed so every change is credited to you).
 
 **What we ran:**
 ```
-git config --file "/c/Users/rasecheres/.gitconfig" user.name "Ralso11"
+git config --file "/c/Users/<your-user>/.gitconfig" user.name "Ralso11"
 ```
 **In plain words:** "Git, please write the setting `user.name = Ralso11`
 directly into this specific file, instead of trying to find the default
